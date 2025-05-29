@@ -16,6 +16,7 @@ import org.opencv.core.Core;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
 import org.opencv.aruco.Dictionary;
+import org.opencv.core.Rect;
 import org.opencv.core.Size;
 import org.opencv.imgproc.Imgproc;
 
@@ -140,7 +141,9 @@ public class YourService extends KiboRpcService {
 
             //Loading template image and target image
             Mat template=templates[tempNum].clone();
-            Mat targetImg=undistortImg.clone();
+//            Mat targetImg=undistortImg.clone();
+            Mat targetImg = cropAroundMarker(undistortImg, corners, 50.0, cameraMatrix); // crop 15 cm region
+            api.saveMatImage(targetImg, "cropped_from_marker.png");
 
             //Pattern matching
             int widthMin=20;//px
@@ -148,17 +151,23 @@ public class YourService extends KiboRpcService {
             int changeWidth=100;
             int changeAngle=45;
 
+            int i=10;
+
             for(int size=widthMin;size<=widthMax;size+=changeWidth){
+                while(i>10){
+                    api.saveMatImage(template,size+".png");
+                    i--;
+                }
                 for(int angle=0;angle<360;angle+=changeAngle){
-                    Mat resizedTemp=resizeImg(template,size);
-                    Mat rotresizedTemp=rotImg(resizedTemp,angle);
+                    Mat resizedTemp=resizeImg(template,size); //resized
+                    Mat rotresizedTemp=rotImg(resizedTemp,angle);//rotate
 
                     Mat result = new Mat();
                     Imgproc.matchTemplate(targetImg,rotresizedTemp,result,Imgproc.TM_CCOEFF_NORMED);
 
                     //Get coordinates with similarity greater than or equal to the threshhold
 
-                    double threshhold=0.7;
+                    double threshhold=0.5;
                     Core.MinMaxLocResult mmlr=Core.minMaxLoc(result);
                     double maxVal=mmlr.maxVal;
 
@@ -191,9 +200,15 @@ public class YourService extends KiboRpcService {
 
         int mostMatchTemplateNum=getMaxIndex(templateMatchCount);
 
-        // When you recognize landmark items, let’s set the type and number.
-        api.setAreaInfo(1, TEMPLATE_NAME[mostMatchTemplateNum], templateMatchCount[mostMatchTemplateNum]);
-        Log.i(TAG,"found"+TEMPLATE_NAME[mostMatchTemplateNum]);
+        if(mostMatchTemplateNum!=-1){
+            // When you recognize landmark items, let’s set the type and number.
+            api.setAreaInfo(1, TEMPLATE_NAME[mostMatchTemplateNum], templateMatchCount[mostMatchTemplateNum]);
+            Log.i(TAG,"found"+TEMPLATE_NAME[mostMatchTemplateNum]);
+
+        }else{
+            api.setAreaInfo(1,"None",-1);
+        }
+
 
         /* **************************************************** */
         /* Let's move to each area and recognize the items. */
@@ -284,8 +299,8 @@ public class YourService extends KiboRpcService {
 
     //get maximum value of an array
     private int getMaxIndex(int[] array){
-        int max=0;
-        int maxid=0;
+        int max=-1;
+        int maxid=-1;
         for(int i=0;i< array.length;i++){
             if(array[i]>max){
                 max=array[i];
@@ -294,4 +309,40 @@ public class YourService extends KiboRpcService {
         }
         return maxid;
     }
+    private Mat cropAroundMarker(Mat image, List<Mat> corners, double cmSize, Mat cameraMatrix) {
+        if (corners.isEmpty()) return image;
+
+        // Convert 15 cm to pixels
+        double fx = cameraMatrix.get(0, 0)[0]; // fx from intrinsics
+        double approxDistanceM = 1.0; // assume 1 meter from marker
+        double pixelsPerCM = fx / (approxDistanceM * 100.0);
+        int radiusPixels = (int) (pixelsPerCM * cmSize / 2.0);
+
+        // Get center point of first marker
+        Mat marker = corners.get(0); // take first marker
+        double centerX = 0;
+        double centerY = 0;
+        for (int i = 0; i < 4; i++) {
+            centerX += marker.get(0, i)[0];
+            centerY += marker.get(0, i)[1];
+        }
+        centerX /= 4.0;
+        centerY /= 4.0;
+
+        // Crop region around marker center
+        int x = (int) (centerX - radiusPixels);
+        int y = (int) (centerY - radiusPixels);
+        int width = radiusPixels * 2;
+        int height = radiusPixels * 2;
+
+        // Bounds check
+        x = Math.max(0, x);
+        y = Math.max(0, y);
+        width = (x + width > image.cols()) ? image.cols() - x : width;
+        height = (y + height > image.rows()) ? image.rows() - y : height;
+
+        Rect roi = new Rect(x, y, width, height);
+        return new Mat(image, roi);
+    }
+
 }
