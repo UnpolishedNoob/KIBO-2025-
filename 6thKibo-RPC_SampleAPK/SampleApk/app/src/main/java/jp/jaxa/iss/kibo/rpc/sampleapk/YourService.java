@@ -4,6 +4,7 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.util.Log;
 
+import gov.nasa.arc.astrobee.Result;
 import jp.jaxa.iss.kibo.rpc.api.KiboRpcService;
 
 import gov.nasa.arc.astrobee.types.Point;
@@ -61,6 +62,20 @@ public class YourService extends KiboRpcService {
             "treasure_box"
     };
 
+    private final double[][] place={
+            {10.95,-10,5.57},
+            {10.925,-9,3},
+            {10.10,-8,3},
+            {10,-6.86,5}
+    };
+
+    private final float[][] angle={
+            {0,0,-707f,707f},
+            {0,707f,0,707f},
+            {0,707f,0,707f},
+            {0,1f,0,0}
+    };
+
     @Override
     protected void runPlan1(){
         Log.i(TAG,"Start mission ! ");
@@ -69,14 +84,23 @@ public class YourService extends KiboRpcService {
         api.startMission();
 
         // Move to a point.
-        Point point = new Point(10.9d, -9.92284d, 5.195d);
-        Quaternion quaternion = new Quaternion(0f, 0f, -0.707f, 0.707f);
-        api.moveTo(point, quaternion, false);
+//        Point point = new Point(10.9d, -9.92284d, 5.195d);
+//        Quaternion quaternion = new Quaternion(0f, 0f, -0.707f, 0.707f);
+//        api.moveTo(point, quaternion, false);
 
         // Get a camera image.
-        Mat image = api.getMatNavCam();
+//        Mat image = api.getMatNavCam();
+//
+//        api.saveMatImage(image,"image_1.png");
 
-        api.saveMatImage(image,"image_1.png");
+        for(int i=0;i<4;i++){
+            double x=place[i][0],y=place[i][1],z=place[i][2];
+            float a=angle[i][0],b=angle[i][1],c=angle[i][2],d=angle[i][3];
+
+            Point point=new Point(x,y,z);
+            Quaternion q=new Quaternion(a,b,c,d);
+            move(point,q,i);
+        }
 
         /* ******************************************************************************** */
         /* Write your code to recognize the type and number of landmark items in each area! */
@@ -84,130 +108,56 @@ public class YourService extends KiboRpcService {
         /* ******************************************************************************** */
 
         //Ar tag reading
-        Dictionary dictionary= Aruco.getPredefinedDictionary(Aruco.DICT_5X5_250);
-        List<Mat>corners=new ArrayList<>();
-        Mat markerIds=new Mat();
-        Aruco.detectMarkers(image,dictionary,corners,markerIds);
+//        Dictionary dictionary= Aruco.getPredefinedDictionary(Aruco.DICT_5X5_250);
+//        List<Mat>corners=new ArrayList<>();
+//        Mat markerIds=new Mat();
+//        Aruco.detectMarkers(image,dictionary,corners,markerIds);
 
         //Get camera matrix
-        Mat cameraMatrix=new Mat(3,3, CvType.CV_64F);
-        cameraMatrix.put(0,0,api.getNavCamIntrinsics()[0]);
+//        Mat cameraMatrix=new Mat(3,3, CvType.CV_64F);
+//        cameraMatrix.put(0,0,api.getNavCamIntrinsics()[0]);
 
         //Get Lens distortion parameters
-        Mat cameraCoefficient=new Mat(1,5,CvType.CV_64F);
-        cameraCoefficient.put(0,0,api.getNavCamIntrinsics()[1]);
-        cameraCoefficient.convertTo(cameraCoefficient,CvType.CV_64F);
+//        Mat cameraCoefficient=new Mat(1,5,CvType.CV_64F);
+//        cameraCoefficient.put(0,0,api.getNavCamIntrinsics()[1]);
+//        cameraCoefficient.convertTo(cameraCoefficient,CvType.CV_64F);
 
         //Undistort image
-        Mat undistortImg=new Mat();
-        Calib3d.undistort(image,undistortImg,cameraMatrix,cameraCoefficient);
+//        Mat undistortImg=new Mat();
+//        Calib3d.undistort(image,undistortImg,cameraMatrix,cameraCoefficient);
 
         //Pattern matching
         //Load template images
-        Mat[] templates=new Mat[TEMPLATE_FILE_NAME.length];
+//        Mat[] templates=new Mat[TEMPLATE_FILE_NAME.length];
+//
+//        for(int i=0;i<TEMPLATE_FILE_NAME.length;i++){
+//            try{
+//                //open template image file in bitmap from file & convert to Mat
+//                InputStream inputStream=getAssets().open(TEMPLATE_FILE_NAME[i]);
+//                Bitmap bitmap= BitmapFactory.decodeStream(inputStream);
+//
+//                Mat mat=new Mat();
+//                Utils.bitmapToMat(bitmap,mat);
+//
+//
+//                //convert to grayscale
+//                Imgproc.cvtColor(mat,mat,Imgproc.COLOR_BGR2GRAY);
+//
+//                //Assign to array of template
+//                templates[i]=mat;
+//                api.saveMatImage(templates[i],i+".png");
+//                inputStream.close();
+//            }catch (IOException e){
+//                e.printStackTrace();
+//            }
+//        }
 
-        for(int i=0;i<TEMPLATE_FILE_NAME.length;i++){
-            try{
-                //open template image file in bitmap from file & convert to Mat
-                InputStream inputStream=getAssets().open(TEMPLATE_FILE_NAME[i]);
-                Bitmap bitmap= BitmapFactory.decodeStream(inputStream);
-
-                Mat mat=new Mat();
-                Utils.bitmapToMat(bitmap,mat);
 
 
-                //convert to grayscale
-                Imgproc.cvtColor(mat,mat,Imgproc.COLOR_BGR2GRAY);
 
-                //Assign to array of template
-                templates[i]=mat;
-                api.saveMatImage(templates[i],i+".png");
-                inputStream.close();
-            }catch (IOException e){
-                e.printStackTrace();
-            }
-        }
-
-        //Number of matches for each templates
-        int templateMatchCount[]=new int[templates.length];
-
-        //Get the number of template matches
-        for(int tempNum=0;tempNum<templates.length;tempNum++){
-            //number of matches
-            int matchcnt=0;
-
-            //coordinates of the matched location
-            List<org.opencv.core.Point>matches=new ArrayList<>();
-
-            //Loading template image and target image
-            Mat template=templates[tempNum].clone();
-//            Mat targetImg=undistortImg.clone();
-            Mat targetImg = cropAroundMarker(undistortImg, corners, 50.0, cameraMatrix); // crop 15 cm region
-            api.saveMatImage(targetImg, "cropped_from_marker.png");
-
-            //Pattern matching
-            int widthMin=20;//px
-            int widthMax=100;
-            int changeWidth=100;
-            int changeAngle=45;
-
-            int i=10;
-
-            for(int size=widthMin;size<=widthMax;size+=changeWidth){
-                while(i>10){
-                    api.saveMatImage(template,size+".png");
-                    i--;
-                }
-                for(int angle=0;angle<360;angle+=changeAngle){
-                    Mat resizedTemp=resizeImg(template,size); //resized
-                    Mat rotresizedTemp=rotImg(resizedTemp,angle);//rotate
-
-                    Mat result = new Mat();
-                    Imgproc.matchTemplate(targetImg,rotresizedTemp,result,Imgproc.TM_CCOEFF_NORMED);
-
-                    //Get coordinates with similarity greater than or equal to the threshhold
-
-                    double threshhold=0.5;
-                    Core.MinMaxLocResult mmlr=Core.minMaxLoc(result);
-                    double maxVal=mmlr.maxVal;
-
-                    if(maxVal>=threshhold){
-                        //Extract only results greater than or equal to the threshold
-                        Mat thresholdResult=new Mat();
-                        Imgproc.threshold(result,thresholdResult,threshhold,1.0,Imgproc.THRESH_TOZERO);
-                        api.saveMatImage(targetImg,angle+"degree_"+size+"size_target.png");
-                        api.saveMatImage(rotresizedTemp,angle+"degree_"+size+"size_target.png");
-
-                        //Get coordinates of matched location
-                        for(int y=0;y<thresholdResult.rows();y++){
-                            for(int x=0;x<thresholdResult.cols();x++){
-                                if(thresholdResult.get(y,x)[0]>0){
-                                    //matchcnt++;
-                                    matches.add(new org.opencv.core.Point(x,y));
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            //Avoid detecting the same location multiple times
-            List<org.opencv.core.Point>filterMatches=removeDuplicate(matches);
-            matchcnt+=filterMatches.size();
-
-            //number of matches for each template
-            templateMatchCount[tempNum]=matchcnt;
-        }
-
-        int mostMatchTemplateNum=getMaxIndex(templateMatchCount);
-
-        if(mostMatchTemplateNum!=-1){
             // When you recognize landmark items, let’s set the type and number.
-            api.setAreaInfo(1, TEMPLATE_NAME[mostMatchTemplateNum], templateMatchCount[mostMatchTemplateNum]);
-            Log.i(TAG,"found"+TEMPLATE_NAME[mostMatchTemplateNum]);
+            api.setAreaInfo(1, "something",1);
 
-        }else{
-            api.setAreaInfo(1,"None",-1);
-        }
 
 
         /* **************************************************** */
@@ -215,8 +165,8 @@ public class YourService extends KiboRpcService {
         /* **************************************************** */
 
         // When you move to the front of the astronaut, report the rounding completion.
-        point = new Point(11.143d, -6.7607d, 4.9654d);
-        quaternion = new Quaternion(0f, 0f, 0.707f, 0.707f);
+         Point point = new Point(11.143d, -6.7607d, 4.9654d);
+        Quaternion quaternion = new Quaternion(0f, 0f, 0.707f, 0.707f);
         api.moveTo(point, quaternion, false);
         api.reportRoundingCompletion();
 
@@ -251,98 +201,104 @@ public class YourService extends KiboRpcService {
     }
 
     //Resize img
-    private Mat resizeImg(Mat img,int width){
-        int height=(int)(img.rows()*((double)width/img.cols()));
-        Mat resizedImg=new Mat();
-        Imgproc.resize(img,resizedImg,new Size(width,height));
-        return resizedImg;
-    }
+//    private Mat resizeImg(Mat img,int width){
+//        int height=(int)(img.rows()*((double)width/img.cols()));
+//        Mat resizedImg=new Mat();
+//        Imgproc.resize(img,resizedImg,new Size(width,height));
+//        return resizedImg;
+//    }
 
     //Rotate img
-    private Mat rotImg(Mat img,int angle){
-        //api.saveMatImage(img,"Img_before_rotation.png");
-        org.opencv.core.Point center=new org.opencv.core.Point(img.cols()/2.0,img.rows()/2.0);
-        Mat rotateMat=Imgproc.getRotationMatrix2D(center,angle,1.0);
-        Mat rotateImg=new Mat();
-        Imgproc.warpAffine(img,rotateImg,rotateMat,img.size());
-        //api.saveMatImage(rotateImg,"rotated_img.png");
-        return rotateImg;
-    }
+//    private Mat rotImg(Mat img,int angle){
+//        //api.saveMatImage(img,"Img_before_rotation.png");
+//        org.opencv.core.Point center=new org.opencv.core.Point(img.cols()/2.0,img.rows()/2.0);
+//        Mat rotateMat=Imgproc.getRotationMatrix2D(center,angle,1.0);
+//        Mat rotateImg=new Mat();
+//        Imgproc.warpAffine(img,rotateImg,rotateMat,img.size());
+//        //api.saveMatImage(rotateImg,"rotated_img.png");
+//        return rotateImg;
+//    }
 
-    //find the distance between two points
-    private double calculateDistance(org.opencv.core.Point p1,org.opencv.core.Point p2){
-        double dx=p1.x-p2.x;
-        double dy=p1.y-p2.y;
-        return Math.sqrt(Math.pow(dx,2)+Math.pow(dy,2));
-    }
+//    private Mat cropAroundMarker(Mat image, List<Mat> corners, double cmSize, Mat cameraMatrix) {
+//        if (corners.isEmpty()) return image;
+//
+//        // Convert 15 cm to pixels
+//        double fx = cameraMatrix.get(0, 0)[0]; // fx from intrinsics
+//        double approxDistanceM = 1.0; // assume 1 meter from marker
+//        double pixelsPerCM = fx / (approxDistanceM * 100.0);
+//        int radiusPixels = (int) (pixelsPerCM * cmSize / 2.0);
+//
+//        // Get center point of first marker
+//        Mat marker = corners.get(0); // take first marker
+//        double centerX = 0;
+//        double centerY = 0;
+//        for (int i = 0; i < 4; i++) {
+//            centerX += marker.get(0, i)[0];
+//            centerY += marker.get(0, i)[1];
+//        }
+//        centerX /= 4.0;
+//        centerY /= 4.0;
+//
+//        // Crop region around marker center
+//        int x = (int) (centerX - radiusPixels);
+//        int y = (int) (centerY - radiusPixels);
+//        int width = radiusPixels * 2;
+//        int height = radiusPixels * 2;
+//
+//        // Bounds check
+//        x = Math.max(0, x);
+//        y = Math.max(0, y);
+//        width = (x + width > image.cols()) ? image.cols() - x : width;
+//        height = (y + height > image.rows()) ? image.rows() - y : height;
+//
+//        Rect roi = new Rect(x, y, width, height);
+//        return new Mat(image, roi);
+//    }
 
-    //Remove multiple detections
-    private List<org.opencv.core.Point>removeDuplicate(List<org.opencv.core.Point>points){
-        double length=10;
-        List<org.opencv.core.Point>filteredList=new ArrayList<>();
 
-        for(org.opencv.core.Point point:points){
-            boolean include=false;
-            for(org.opencv.core.Point checkpoint:filteredList){
-                double distance=calculateDistance(point,checkpoint);
-                if(distance<=length){
-                    include=true;
-                    break;
-                }
-            }
-            if(!include){
-                filteredList.add(point);
-            }
+    private boolean move(Point point, Quaternion quaternion,int i){
+        Log.d("MOVE", "Attempting to move to, Point:" + point + "; Quaternion: "+quaternion);
+
+        if(point == null || quaternion == null){
+            Log.d("MOVE", "Count not move, params are null");
+            return false;
         }
-        return filteredList;
-    }
 
-    //get maximum value of an array
-    private int getMaxIndex(int[] array){
-        int max=-1;
-        int maxid=-1;
-        for(int i=0;i< array.length;i++){
-            if(array[i]>max){
-                max=array[i];
-                maxid=i;
+        int retryCount = 0;
+        Result result;
+        do {
+            result = api.moveTo(point, quaternion, true);
+
+            if(result.hasSucceeded()){
+                wait(1500);
+                Mat img=api.getMatNavCam();
+                wait(10);
+                api.saveMatImage(img,i+".jpg");
+
+                return true;
             }
-        }
-        return maxid;
+            retryCount++;
+
+            Log.d("MOVE","Move attempt :" + retryCount);
+
+            wait(1500);
+        } while(!result.hasSucceeded() && retryCount < 3);
+
+        Log.d("MOVE", "Move to target failed");
+        return false;
     }
-    private Mat cropAroundMarker(Mat image, List<Mat> corners, double cmSize, Mat cameraMatrix) {
-        if (corners.isEmpty()) return image;
 
-        // Convert 15 cm to pixels
-        double fx = cameraMatrix.get(0, 0)[0]; // fx from intrinsics
-        double approxDistanceM = 1.0; // assume 1 meter from marker
-        double pixelsPerCM = fx / (approxDistanceM * 100.0);
-        int radiusPixels = (int) (pixelsPerCM * cmSize / 2.0);
+    public void wait(int milliseconds){
+        Log.d("WAIT", "Pausing for: "+milliseconds+"ms");
 
-        // Get center point of first marker
-        Mat marker = corners.get(0); // take first marker
-        double centerX = 0;
-        double centerY = 0;
-        for (int i = 0; i < 4; i++) {
-            centerX += marker.get(0, i)[0];
-            centerY += marker.get(0, i)[1];
+        try{
+            Thread.sleep(milliseconds);
+        }catch (InterruptedException e){
+            Log.d("WAIT", "Error Pausing for: "+milliseconds+"ms");
+            e.printStackTrace();
         }
-        centerX /= 4.0;
-        centerY /= 4.0;
 
-        // Crop region around marker center
-        int x = (int) (centerX - radiusPixels);
-        int y = (int) (centerY - radiusPixels);
-        int width = radiusPixels * 2;
-        int height = radiusPixels * 2;
-
-        // Bounds check
-        x = Math.max(0, x);
-        y = Math.max(0, y);
-        width = (x + width > image.cols()) ? image.cols() - x : width;
-        height = (y + height > image.rows()) ? image.rows() - y : height;
-
-        Rect roi = new Rect(x, y, width, height);
-        return new Mat(image, roi);
+        return;
     }
 
 }
