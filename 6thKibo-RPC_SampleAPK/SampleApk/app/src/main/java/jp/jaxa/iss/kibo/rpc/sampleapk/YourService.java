@@ -35,7 +35,7 @@ public class YourService extends KiboRpcService {
     private final double[][] place={
             {10.95,-9.85,5.195},
             {10.925,-8.875,4.52},
-            {10.942,-7.89,4.51},
+            {10.942,-7.75,4.51},
             {10.6,-6.852,4.94}
     };
 
@@ -46,14 +46,6 @@ public class YourService extends KiboRpcService {
             //{0,0.707f,0,0.707f},
             {0.1651f,0.6876f,0.1651f,0.6876f},
             {0,1f,0,0}
-    };
-
-    private String[] image={
-            "image_1.jpg",
-            "image_2.jpg",
-            "image_3.jpg",
-            "image_4.jpg",
-            "final.jpg"
     };
 
     @Override
@@ -135,7 +127,7 @@ public class YourService extends KiboRpcService {
             result = api.moveTo(point, quaternion, true);
 
             if(result.hasSucceeded()){
-                wait(1000);
+                wait(500);
                 Mat img=api.getMatNavCam();
                 wait(10);
                 api.saveMatImage(img,"img@"+i+".jpg");
@@ -147,7 +139,7 @@ public class YourService extends KiboRpcService {
 
             Log.i(TAG,"Move attempt :" + retryCount);
 
-            wait(1000);
+            wait(500);
         } while(!result.hasSucceeded() && retryCount < 3);
 
         Log.i(TAG, "Move to target failed");
@@ -189,7 +181,7 @@ public class YourService extends KiboRpcService {
         if (!markerids.empty()) {
             crop(mat, corners, markerids, i);
         } else {
-            Log.i(TAG, "No ArUco markers detected in image " + image[i]);
+            Log.i(TAG, "No ArUco markers detected in image " + i);
         }
     }
 
