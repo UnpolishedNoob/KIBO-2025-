@@ -2,7 +2,6 @@ package jp.jaxa.iss.kibo.rpc.sampleapk;
 
 import android.graphics.Bitmap;
 import android.graphics.Bitmap.Config;
-import android.nfc.Tag;
 import android.util.Log;
 
 import gov.nasa.arc.astrobee.Result;
@@ -20,13 +19,16 @@ import org.opencv.imgproc.Imgproc;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 public class YourService extends KiboRpcService {
     private static final String TAG = "YourService__HAHA";
     private Detector detector;
-    private Mat[] markerIds;
+    Map<String, HashMap<Object, Object>> gemMap = new HashMap<>();
+    private String Treasure;
+    Map<Integer,String>Landmark=new HashMap<>();
 
     private final double[][] place = {
             {10.95,-9.85,5.195},
@@ -135,6 +137,23 @@ public class YourService extends KiboRpcService {
         Bitmap image4=getImg(5);
         sleep(50);
         detect(image4,5);
+        Integer Area = null; // Use Integer instead of int to allow null checking
+        HashMap<Object, Object> treasureData = gemMap.get(Treasure);
+
+        if (treasureData != null) {
+            // Iterate over the entries of the inner map
+            for (Map.Entry<Object, Object> entry : treasureData.entrySet()) {
+                int currentIdx = (Integer)entry.getKey();  // This is the idx (key)
+                Object currentElement = entry.getValue();  // This is the element (value)
+                Log.i(TAG,"ID: " + currentIdx + ", Element: " + currentElement);
+                if(Landmark.get(currentIdx)==currentElement){
+                    Area=currentIdx;
+                    break;
+                }
+            }
+        } else {
+                Log.i(TAG,"No data found for treasure.");
+        }
 
 
         /* ********************************************************** */
@@ -143,6 +162,14 @@ public class YourService extends KiboRpcService {
 
         // Let's notify the astronaut when you recognize it.
         api.notifyRecognitionItem();
+
+        if(Area!=null) {
+            Point last = new Point(place[Area - 1][0], place[Area - 1][1], place[Area - 1][2]);
+            Quaternion lastAngle = new Quaternion(
+                    angle[Area - 1][0], angle[Area - 1][1], angle[Area - 1][2], angle[Area - 1][3]
+            );
+            move(last, lastAngle , 6);
+        }
 
         /* ******************************************************************************************************* */
         /* Write your code to move Astrobee to the location of the target item (what the astronaut is looking for) */
@@ -181,7 +208,7 @@ public class YourService extends KiboRpcService {
         Detector.Result det = detector.detect(image);
 
         // 4) Log detections
-        for (Detection d : det.detections) {
+        for (Detector.Detection d : det.detections) {
             String lbl = detector.labels.get(d.classIdx);
             Log.i(TAG, String.format(
                     "→ %s @ [%.1f,%.1f→%.1f,%.1f] score=%.2f",
@@ -189,14 +216,43 @@ public class YourService extends KiboRpcService {
             ));
         }
 
+        boolean treasure=false;
+        String name = null,element = null;
+
         // 5) Report counts via setAreaInfo(areaId, itemName, number)
         for (Map.Entry<String,Integer> e : det.counts.entrySet()) {
             String itemName = e.getKey();
             int count       = e.getValue();
             Log.i(TAG,"calling setAreaInfo ()^^^^^^^^^^^^^^^^^^");
+            treasure=isTreasureItem(itemName);
+            if(treasure){
+                name=itemName;
+            }else{
+                element=itemName;
+            }
             api.setAreaInfo(idx, itemName, count);
             Log.i(TAG, "Reported area " + idx + ": " + itemName + " × " + count);
         }
+        if(treasure&&name!=null&&idx!=5){
+            // Initialize the inner map if it doesn't exist for the given gem name (e.g., "diamond")
+            gemMap.putIfAbsent(name, new HashMap<>()); // This will only put the inner map if it doesn't exist
+
+            // Now put the ID and element into the inner map
+            gemMap.get(name).put(idx, element);
+        }
+        if(idx!=5){
+            Landmark.put(idx,element);
+        }
+        Log.i(TAG,"the map for id "+idx +" is=>=>=>=>=>=> " + String.valueOf(gemMap));
+        Log.i(TAG,"====>>==>>>the LandMark element is "+String.valueOf(Landmark));
+        if(idx==5){
+            Treasure=name;
+        }
+
+    }
+
+    public boolean isTreasureItem(String itemName) {
+        return itemName.equals("crystal") || itemName.equals("diamond") || itemName.equals("emerald");
     }
 
     public Bitmap getImg(int i){
@@ -211,6 +267,7 @@ public class YourService extends KiboRpcService {
 //        markerIds[i]=new Mat();
 //        markerIds[i] = markerId.clone();
         Log.i(TAG,i+" no Marker ID is : "+markerId);
+        Log.i(TAG,"marker id is >>>>>>>>>>>>>>>>> "+markerId.dump());
         api.saveMatImage(image,"captured_raw_"+1+".jpg");
 
         //Get camera matrix
@@ -226,6 +283,64 @@ public class YourService extends KiboRpcService {
         Mat undistorting=new Mat();
         Calib3d.undistort(image,undistorting,cameraMatrix,cameraCoefficient);
         api.saveMatImage(image,"undistort_"+i+".jpg");
+
+
+        // 6. Estimate pose (only if markers were found)
+        if (!markerId.empty()) {
+            Mat rvecs = new Mat();  // rotation vectors
+            Mat tvecs = new Mat();  // translation vectors
+
+            float markerLength = 0.05f; // meters (adjust based on your real marker size)
+
+            Aruco.estimatePoseSingleMarkers(corners, markerLength, cameraMatrix, cameraCoefficient, rvecs, tvecs);
+
+            for (int idx = 0; idx < markerId.rows(); idx++) {
+                // 7. Get position
+                double[] tvec = new double[3];
+                tvecs.get(idx, 0, tvec); // tx, ty, tz
+
+                // >>> ADDED: Calculate Euclidean distance
+                double distance = Math.sqrt(tvec[0]*tvec[0] + tvec[1]*tvec[1] + tvec[2]*tvec[2]);
+                Log.i(TAG, String.format("Marker real Tag %d -> Distance from camera: %.4f meters",
+                        (int) markerId.get(idx, 0)[0], distance));
+
+
+                // 8. Convert rotation vector to rotation matrix
+                Mat rvec = new Mat(1, 3, CvType.CV_64F);
+                rvecs.row(idx).copyTo(rvec);
+                Mat rotationMatrix = new Mat();
+                Calib3d.Rodrigues(rvec, rotationMatrix);
+
+                // >>> ADDED: Calculate angle of rotation (in degrees)
+                double[] rotVec = new double[3];
+                rvec.get(0, 0, rotVec);
+                double angleRad = Math.sqrt(rotVec[0]*rotVec[0] + rotVec[1]*rotVec[1] + rotVec[2]*rotVec[2]);
+                double angleDeg = Math.toDegrees(angleRad);
+                Log.i(TAG, String.format("Marker real Tag %d -> Rotation angle: %.2f degrees",
+                        (int) markerId.get(idx, 0)[0], angleDeg));
+
+                // 9. Convert rotation matrix to quaternion
+                double[] R = new double[9];
+                rotationMatrix.get(0, 0, R);
+                double r00 = R[0], r01 = R[1], r02 = R[2];
+                double r10 = R[3], r11 = R[4], r12 = R[5];
+                double r20 = R[6], r21 = R[7], r22 = R[8];
+
+                double qw = Math.sqrt(1.0 + r00 + r11 + r22) / 2.0;
+                double qx = (r21 - r12) / (4.0 * qw);
+                double qy = (r02 - r20) / (4.0 * qw);
+                double qz = (r10 - r01) / (4.0 * qw);
+
+                // 10. Log position and orientation (quaternion)
+                Log.i(TAG, String.format("Marker real Tag %d -> Position (x,y,z): [%.4f, %.4f, %.4f]",
+                        (int) markerId.get(idx, 0)[0], tvec[0], tvec[1], tvec[2]));
+                Log.i(TAG, String.format("Marker real Tag %d -> Quaternion (x,y,z,w): [%.4f, %.4f, %.4f, %.4f]",
+                        (int) markerId.get(idx, 0)[0], qx, qy, qz, qw));
+            }
+        } else {
+            Log.i(TAG, "No marker detected.");
+        }
+
 
         Mat rgb = new Mat();
         Imgproc.cvtColor(image, rgb, Imgproc.COLOR_BGR2RGB);
